@@ -1,0 +1,8 @@
+{
+  "name": "delta-loadout-skill",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {"test": "node --test tests/*.test.mjs", "pack:skill": "python scripts/package_skill.py"}
+}
