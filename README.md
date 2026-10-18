@@ -56,13 +56,6 @@ python scripts/package_skill.py
 
 数据、引擎、宿主选装与报告分别放在技能目录的 `data/`、`scripts/lib/`、`references/` 中。历史女娲导出、平台账号信息和调试日志不属于本仓库。更新快照时应同时更新来源日期、图片索引与测试，不能只改展示日期。
 
-## 上传 GitHub
-
-1. 解压 `delta-loadout-github.zip`，得到完整的 `delta-loadout-skill` 文件夹。
-2. 在 GitHub 创建空仓库。在解压文件夹里使用 GitHub Desktop 的“添加本地仓库”，创建仓库后发布，或用 Git 推送。必须保留隐藏目录 `.agents`，它包含技能、引擎和数据。
-3. 可将 `delta-loadout-skill.zip` 与 `SHA256SUMS` 作为 GitHub Release 附件，供其他用户直接下载导入。
-
-源码包包含 README、示例、完整技能、规则、数据、测试和打包脚本；技能包根目录直接包含 `SKILL.md`。打包脚本只收录明确列出的源码目录，不包含输出报告、聊天记录、女娲导出、账号配置或本地 Git 历史。
 
 ## 许可证与数据
 
