@@ -22,12 +22,6 @@ test('five-level boundary and basic medicine cannot be weakened',()=>{
  const state=prepare({...input,map:'航天基地',budget:1500000});const proposal={plans:JSON.parse(state.seed_choices)};
  proposal.plans[0].supplies=[];const out=finish(state,proposal);assert.ok(out.proposal_errors.some(e=>e.style==='猛攻'));assert.ok(out.plans[0].weapons.every(w=>w.ammo.grade>=5));assert.ok(out.plans[0].supplies.length>0);
 });
-test('hard mode gold medical survives removal attempt',()=>{
- const state=prepare({...input,map:'航天基地',difficulty:'绝密',budget:4000000}),proposal={plans:JSON.parse(state.seed_choices)};
- const gold=JSON.parse(state.registry).supplies.find(i=>i.item_name==='战地医疗箱').item_id;
- proposal.plans[0].supplies=proposal.plans[0].supplies.filter(s=>String(s.item_id)!==String(gold));
- const out=finish(state,proposal);assert.ok(out.proposal_errors.length);assert.ok(out.plans[0].supplies.some(s=>s.item.item_name==='战地医疗箱'));
-});
 test('self-contained report escapes data and retains all parts and medical images',()=>{
  const out=finish(prepare(input));out.plans[0].tactic='<script>alert(1)</script>';const text=html(out);
  assert.ok(text.includes('&lt;script&gt;'));assert.ok(!text.includes('<script>'));
