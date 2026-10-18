@@ -36,5 +36,5 @@ export function finish(state,proposal){
   plans=M.finalize({...state,plans:checked.plans}).plans;
  }
  plans=JSON.parse(E.reconcile({plans,rows:state.parts}).plans);
- return {version:2,rules_version:'16',pricing_version:'18',snapshot:state.price_meta.mode==='live'?null:'2026-10-13',price_meta:state.price_meta,request:JSON.parse(state.request),rule:JSON.parse(state.rule),selection:proposal===undefined?'rule_seed':'host_model_with_validated_fallback',proposal_errors:errors,plans};
+ return {version:2,rules_version:'19',pricing_version:'18',snapshot:state.price_meta.mode==='live'?null:'2026-10-13',price_meta:state.price_meta,request:JSON.parse(state.request),rule:JSON.parse(state.rule),selection:proposal===undefined?'rule_seed':'host_model_with_validated_fallback',proposal_errors:errors,plans};
 }

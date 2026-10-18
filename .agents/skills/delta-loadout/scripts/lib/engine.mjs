@@ -51,7 +51,7 @@ export function cleanBuilds(args,c=common()) {
 }
 export function policy(args,c=common()) {
  const request=JSON.parse(args.request),rule=JSON.parse(args.rule);if(!Number.isFinite(rule.min_entry_value)||rule.min_entry_value<0)throw new Error('地图门槛缺失');
- return {policy:JSON.stringify({style:args.style,request,minEntry:rule.min_entry_value,spendLimit:request.budget,supplySpec:c.supplySpec(args.style,request),version:16})};
+ return {policy:JSON.stringify({style:args.style,request,minEntry:rule.min_entry_value,spendLimit:request.budget,supplySpec:c.supplySpec(args.style,request),version:19})};
 }
 export function pairGunAmmo(args,c=common()) {
  const p=JSON.parse(args.policy),r=p.request,items=JSON.parse(args.items),bs=JSON.parse(args.builds),pairs=[];
@@ -76,7 +76,7 @@ export function equipment(args,c=common()) {
  const pick=sub=>{const all=items.filter(i=>i.subcategory===sub&&c.gearAllowed(i,p.style,r)).sort((a,b)=>a.unit_price-b.unit_price);if(['helmet','armor'].includes(sub))return all.filter(x=>{const group=all.filter(y=>y.grade===x.grade&&c.damaged(y)===c.damaged(x));return group.slice(0,2).includes(x)||[...group].sort((a,b)=>c.gearScore(b,p.style,r)-c.gearScore(a,p.style,r)).slice(0,2).includes(x);});return all.filter(i=>i.capacity_slots).slice(0,20);};
  const h=pick('helmet'),a=pick('armor'),ch=pick('chest'),ba=pick('bag');
  if(p.style!=='猛攻'&&(!c.hard(r)||['花来','以小博大'].includes(p.style))){h.unshift(null);a.unshift(null);}ch.unshift(null);ba.unshift(null);
- let best=-Infinity,chosen=null,minFound=Infinity;
+ let best=-Infinity,chosen=null,minFound=Infinity,minCandidate=null;
  const gear=[];for(const helmet of h)for(const armor of a)for(const chest of ch)for(const bag of ba){
   if(p.style==='猛攻'&&(!chest||!bag))continue;
   if(p.style==='堵桥'&&(!helmet||!armor||!chest))continue;
@@ -97,12 +97,29 @@ export function equipment(args,c=common()) {
    const fit=1-Math.abs(pair.gun.gun_total-gunTarget)/Math.max(gunTarget,1);
    const legBonus=p.style==='花来'?c.legAmmoScore(pair.ammo):0;
    const pairScore=fit*30+legBonus-Math.abs(pair.ammo.grade-c.ammoPolicy(p.style,r).preferred)*8;
-  for(const g of gear){const entry=(pair.gun?.gun_total||0)+g.price,total=g.price+pair.cost+g.medCost;if(entry<p.minEntry)continue;minFound=Math.min(minFound,total);if(total>r.budget)continue;
+  for(const g of gear){const entry=(pair.gun?.gun_total||0)+g.price,total=g.price+pair.cost+g.medCost;if(entry<p.minEntry)continue;if(total<minFound){minFound=total;minCandidate={entry_value:entry,ammo_cost:pair.cost-pair.gun.gun_total,supply_cost:g.medCost,total};}if(total>r.budget)continue;
    const score=g.score+pairScore-(p.style==='鼠鼠'?total/r.budget*30:0);
    if(score>best){best=score;chosen={style:p.style,status:'draft',...pair,equipment:g.equipment,supplies:g.supplies,entry_value:entry,total};}
   }
  }
- if(chosen)return {draft:JSON.stringify(chosen),ok:1};
+ if(chosen){
+  // Optional upgrades are applied only after entry, ammunition and basic medicine fit.
+  if(p.style==='猛攻'&&r.difficulty==='绝密'){
+   const upgrade=(name,roles=[])=>{const item=items.find(i=>i.item_name===name);if(!item||!c.supplyAllowed(item,p.style,r))return false;const kept=chosen.supplies.filter(x=>!roles.includes(x.item.medical_role)&&x.item.item_id!==item.item_id);const next=[...kept,{item,quantity:1}],cost=c.cost({...chosen,supplies:next});if(cost.total>r.budget)return false;chosen.supplies=next;Object.assign(chosen,cost);return true;};
+   if(!upgrade('战地医疗箱',['heal']))upgrade('户外医疗箱',['heal']);
+   for(const [slot,role,gold,purple,red] of [['头盔','helmet_repair','精密头盔维修包','标准头盔维修包','高级头盔维修组合'],['护甲','armor_repair','精密护甲维修包',null,'高级护甲维修组合']]){
+    const item=chosen.equipment.find(e=>e.slot===slot)?.item;if(!item)continue;
+    if(item.grade===6)upgrade(red,[role]);else if(!upgrade(gold,[role])&&item.grade===4&&purple)upgrade(purple,[role]);
+   }
+   upgrade('DEK野战手术包',['surgery']);upgrade('DVE止疼片',['pain']);upgrade('OE2战斗兴奋剂');
+  }
+  return {draft:JSON.stringify(chosen),ok:1};
+ }
+ if(minCandidate){
+  const required=Math.ceil(minFound/10000)*10000,ammoPressure=minCandidate.ammo_cost+minCandidate.supply_cost>r.budget-p.minEntry;
+  const message=(p.style==='猛攻'&&c.hard(r)?'绝密/永夜猛攻必须保留五级及以上弹药。':'')+(ammoPressure?'当前弹药与基础补给占用过多预算，余款不足以满足入场战备。':'当前装备、弹药与基础医疗组合超过预算。')+'现有候选最低完整支出为 '+minFound+' 哈夫币，其中入场装备 '+minCandidate.entry_value+'、弹药 '+minCandidate.ammo_cost+'、基础补给 '+minCandidate.supply_cost+'；预算缺口为 '+(minFound-r.budget)+' 哈夫币。请将预算提高至约 '+required+' 哈夫币或以上后重新核价；这是当前候选估算，不是全游戏最低价。';
+  return {draft:JSON.stringify({style:p.style,status:'unavailable',reason:message,budget_diagnostic:{...minCandidate,budget:r.budget,shortfall:minFound-r.budget,suggested_budget:required,ammo_pressure:ammoPressure}}),ok:0};
+ }
  return fail('现有候选未找到满足本风格装备、补给、入场和总预算的组合。'+(Number.isFinite(minFound)?'当前已枚举单枪备选中最低完整支出为 '+minFound+' 哈夫币。':'请增加预算或补充有价候选。'));
 }
 export function supply(args,c=common()) {const d=JSON.parse(args.draft);if(d.status==='unavailable')return {plan:JSON.stringify(d)};Object.assign(d,c.cost(d));return {plan:JSON.stringify(d)};}
@@ -127,17 +144,17 @@ export function validate(args,c=common()) {
  for(const x of ss){add(Number.isInteger(x.quantity)&&x.quantity>=1&&x.quantity<=10,'补给数量须为1至10整数');add(c.supplyAllowed(x.item,p.style,r),'补给不符合风格与难度：'+x.item.item_name);}
  const has=n=>ss.some(x=>x.item.item_name===n),role=n=>ss.some(x=>x.item.medical_role===n),qty=n=>ss.find(x=>x.item.item_name===n)?.quantity||0;
  if(!naked){for(const k of ['heal','surgery','bleed','pain'])add(role(k),'缺少医疗功能：'+k);}
- if(p.style==='猛攻'&&c.hard(r)){
+ if(p.style==='猛攻'&&r.difficulty==='永夜'){
   add(c.hard(r)?has('战地医疗箱'):(has('户外医疗箱')||has('战地医疗箱')),c.hard(r)?'绝密/永夜猛攻必须携带金色战地医疗箱':'猛攻需紫/金血药');add(has('DEK野战手术包')&&has('DVE止疼片'),'猛攻需DEK和DVE');
   for(const name of ['体能强化剂','感知强化剂','M2肌肉注射剂']){if(qty(name))add(qty(name)<=3,'猛攻'+name+'选用时为1至3根');if(r.budget>=1500000)add(qty(name)>=1,'充足预算猛攻至少配置一根'+name);}add(qty('OE2战斗兴奋剂')>=1,'猛攻需OE2应急体力');
-  for(const [item,k] of [[head,'helmet_repair'],[armor,'armor_repair']])if(item){const repairs=ss.filter(x=>x.item.medical_role===k);add(repairs.length===1,'猛攻每种维修用途只选一种匹配品质的维修品，不叠加低档同用途维修包');add(repairs.length>0&&repairs.every(x=>x.item.grade>=(item.grade<=5?5:6)),'猛攻缺少匹配品质的头修/甲修');}
+  for(const [item,k] of [[head,'helmet_repair'],[armor,'armor_repair']])if(item){const repairs=ss.filter(x=>x.item.medical_role===k);add(repairs.length===1,'猛攻每种维修用途只选一种匹配品质的维修品，不叠加低档同用途维修包');add(repairs.length>0&&repairs.every(x=>x.item.grade>=(r.difficulty==='绝密'&&k==='helmet_repair'&&item.grade===4?4:item.grade<=5?5:6)),'猛攻缺少匹配品质的头修/甲修');}
  }else if(p.style==='猛攻'){
-  add(has('野战急救包')||has('户外医疗箱')||has('战地医疗箱'),'常规/机密猛攻需要至少蓝色血包');
-  if(!has('户外医疗箱')&&!has('战地医疗箱'))add(qty('强效注射器')>=2,'常规/机密猛攻仅带蓝色血包时至少两根绿针');
-  add(has('战术快拆手术包')||has('DEK野战手术包'),'常规/机密猛攻需要绿色或DEK手术包');
-  for(const k of ['helmet_repair','armor_repair'])add(ss.filter(x=>x.item.medical_role===k).length<=1,'常规/机密猛攻维修可选，每种用途最多一种，不堆叠');
+  add(has('野战急救包')||has('户外医疗箱')||has('战地医疗箱'),'常规/机密/绝密猛攻需要至少蓝色血包');
+  if(!has('户外医疗箱')&&!has('战地医疗箱'))add(qty('强效注射器')>=2,'常规/机密/绝密猛攻仅带蓝色血包时至少两根绿针');
+  add(has('战术快拆手术包')||has('DEK野战手术包'),'常规/机密/绝密猛攻需要绿色或DEK手术包');
+  for(const k of ['helmet_repair','armor_repair'])add(ss.filter(x=>x.item.medical_role===k).length<=1,'常规/机密/绝密猛攻维修可选，每种用途最多一种，不堆叠');
   for(const name of ['体能强化剂','感知强化剂','M2肌肉注射剂'])if(qty(name))add(qty(name)<=3,'可选增益针每类最多三根');
-  if(r.difficulty==='机密')for(const [item,k] of [[head,'helmet_repair'],[armor,'armor_repair']])if(item){const repairs=ss.filter(x=>x.item.medical_role===k);add(repairs.every(x=>x.item.grade>=(item.grade<=5?5:6)),'可选维修品品质须匹配头甲');}
+  if(['机密','绝密'].includes(r.difficulty))for(const [item,k] of [[head,'helmet_repair'],[armor,'armor_repair']])if(item){const repairs=ss.filter(x=>x.item.medical_role===k);add(repairs.every(x=>x.item.grade>=(r.difficulty==='绝密'&&k==='helmet_repair'&&item.grade===4?4:item.grade<=5?5:6)),'可选维修品品质须匹配头甲');}
  }else if(!naked){
   add(has('战术快拆手术包'),'非猛攻方案使用绿色战术快拆手术包');
   add(has('野战急救包'),'非猛攻方案需蓝色野战急救包');
@@ -145,7 +162,7 @@ export function validate(args,c=common()) {
  }
  add(!role('helmet_repair')||!!head,'未穿头盔不得配头修');add(!role('armor_repair')||!!armor,'未穿护甲不得配甲修');
  add(Number.isFinite(min)&&min>=0,'地图门槛缺失');add(amount.entry_value>=min,'入场装备不足：'+amount.entry_value+' < '+min+'，药弹不计入');add(amount.total<=c.budgetCap(r),'整套超过行动总价上限：'+amount.total+' > '+c.budgetCap(r));add(amount.total<=r.budget,'整套超预算：'+amount.total+' > '+r.budget);add(p.total===amount.total,'总支出对账不一致');
- Object.assign(p,amount,{weapons:ws,gun:ws[0]?.gun??null,ammo:ws[0]?.ammo??null,ammoQty:ws[0]?.ammoQty??0,min_entry_value:min,remaining:r.budget-amount.total,omitted_slots:Object.keys(slots).filter(s=>!eq.some(e=>e.slot===s)),capacity:{rig:eq.find(e=>e.slot==='胸挂')?.item.capacity_slots??null,bag:eq.find(e=>e.slot==='背包')?.item.capacity_slots??null},checks:{assault_new_armor:p.style!=='猛攻'||r.difficulty==='机密'||eq.filter(e=>['头盔','护甲'].includes(e.slot)).every(e=>c.pristine(e.item)||r.allow_assault_used_armor===true),flower_no_bag:p.style!=='花来'||r.allow_flower_bag===true||!eq.some(e=>e.slot==='背包'),mode_budget_cap:amount.total<=c.budgetCap(r),entry_qualified:amount.entry_value>=min,budget:amount.total<=r.budget,ammo_policy:ws.every(w=>c.ammoAllowed(w.ammo,p.style,r)),caliber:ws.every(w=>w.ammo.subcategory===w.gun.caliber),medical:!fail.some(x=>/医疗|补给|血药|手术|针|修|DVE|OE2/.test(x)),style:fail.length===0,normal_caps:!c.normal(r)||(ws.every(w=>w.ammo.grade<=3)&&eq.filter(e=>['头盔','护甲'].includes(e.slot)).every(e=>e.item.grade<=4))},notes:['数据为价格快照；入场只计枪械含配件、头甲和容器。','破损品按该成色真实报价；具体剩余耐久、维修损耗须购买前核验。','子弹为总携带量，不重复计算弹匣和安全箱；格型负重仍需游戏内核验。']});
+ Object.assign(p,amount,{weapons:ws,gun:ws[0]?.gun??null,ammo:ws[0]?.ammo??null,ammoQty:ws[0]?.ammoQty??0,min_entry_value:min,remaining:r.budget-amount.total,omitted_slots:Object.keys(slots).filter(s=>!eq.some(e=>e.slot===s)),capacity:{rig:eq.find(e=>e.slot==='胸挂')?.item.capacity_slots??null,bag:eq.find(e=>e.slot==='背包')?.item.capacity_slots??null},checks:{assault_new_armor:p.style!=='猛攻'||['机密','绝密'].includes(r.difficulty)||eq.filter(e=>['头盔','护甲'].includes(e.slot)).every(e=>c.pristine(e.item)||r.allow_assault_used_armor===true),flower_no_bag:p.style!=='花来'||r.allow_flower_bag===true||!eq.some(e=>e.slot==='背包'),mode_budget_cap:amount.total<=c.budgetCap(r),entry_qualified:amount.entry_value>=min,budget:amount.total<=r.budget,ammo_policy:ws.every(w=>c.ammoAllowed(w.ammo,p.style,r)),caliber:ws.every(w=>w.ammo.subcategory===w.gun.caliber),medical:!fail.some(x=>/医疗|补给|血药|手术|针|修|DVE|OE2/.test(x)),style:fail.length===0,normal_caps:!c.normal(r)||(ws.every(w=>w.ammo.grade<=3)&&eq.filter(e=>['头盔','护甲'].includes(e.slot)).every(e=>e.item.grade<=4))},notes:['数据为价格快照；入场只计枪械含配件、头甲和容器。','破损品按该成色真实报价；具体剩余耐久、维修损耗须购买前核验。','子弹为总携带量，不重复计算弹匣和安全箱；格型负重仍需游戏内核验。']});
  if(fail.length){p.status='unavailable';p.reason=fail.join('；');}return {plan:JSON.stringify(p),eligible:fail.length?0:1};
 }
 export function reconcile(args,c=common()) {
