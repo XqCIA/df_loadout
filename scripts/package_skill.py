@@ -30,7 +30,7 @@ def write_zip(name, entries):
 skill_entries = [(p, p.relative_to(skill).as_posix()) for p in files_under(skill)]
 skill_entries.append((root / 'DATA-NOTICE.txt', 'DATA-NOTICE.txt'))
 sources = [root / name for name in ['README.md', 'package.json', '.gitignore', 'DATA-NOTICE.txt']]
-for folder in [skill, root / 'scripts', root / 'tests', root / 'examples']:
+for folder in [skill, root / 'scripts', root / 'tests', root / 'examples', root / 'docs']:
     sources.extend(files_under(folder))
 source_entries = [(p, 'delta-loadout-skill/' + p.relative_to(root).as_posix()) for p in sources]
 sums = write_zip('delta-loadout-github.zip', source_entries)
